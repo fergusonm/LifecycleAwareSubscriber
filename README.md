@@ -6,6 +6,8 @@ Usage:
 observable.observe(lifecycleOwner) {
     // Do something
 }
+
+// No dispose needed.  It's handled by the lifecycle owner
 ```
 
 As the lifecycle move in and out of an active state the observer should be subscribed and disposed as needed.  If the lifecycle goes into a destroyed state then the observer will be removed and never re-attach.
