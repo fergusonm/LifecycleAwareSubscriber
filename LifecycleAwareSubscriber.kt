@@ -1,22 +1,26 @@
-package com.mostadequate.experiments
+package com.mostadequate.lifecycle
 
 import androidx.lifecycle.*
 import io.reactivex.ObservableSource
 import io.reactivex.disposables.Disposable
 import io.reactivex.observers.DisposableObserver
-import io.reactivex.subjects.Subject
 
 class LifecycleAwareSubscriber<T> constructor(
-    private val eventSource: ObservableSource<T>,
-    private val lifecycleOwner: LifecycleOwner,
-    private val observer: (T) -> Unit
+        private val eventSource: ObservableSource<T>,
+        private val lifecycleOwner: LifecycleOwner,
+        private val observer: Observer<T>
 ) : LifecycleObserver {
     private var eventSourceDisposable: Disposable? = null
     private var previousState: Lifecycle.State = Lifecycle.State.INITIALIZED
 
     init {
-        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.DESTROYED)) {
-            lifecycleOwner.lifecycle.removeObserver(this)
+        when {
+            lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.INITIALIZED) -> {
+                lifecycleOwner.lifecycle.addObserver(this)
+            }
+            lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.DESTROYED) -> {
+                lifecycleOwner.lifecycle.removeObserver(this)
+            }
         }
     }
 
@@ -30,26 +34,27 @@ class LifecycleAwareSubscriber<T> constructor(
             val wasActive = previousState.isAtLeast(Lifecycle.State.STARTED)
             val isActive = state.isAtLeast(Lifecycle.State.STARTED)
             previousState = state
-            if (wasActive && !isActive) {
-                eventSourceDisposable?.dispose()
-            }
-            if (!wasActive && isActive) {
-                // Start observing
-                eventSourceDisposable?.dispose()
-                eventSourceDisposable = object : DisposableObserver<T>() {
-                    override fun onComplete() {
-                        dispose()
-                    }
 
-                    override fun onNext(value: T) {
-                        observer.invoke(value)
-                    }
+            when {
+                wasActive && !isActive -> eventSourceDisposable?.dispose()
+                !wasActive && isActive -> {
+                    // Start observing
+                    eventSourceDisposable?.dispose()
+                    eventSourceDisposable = object : DisposableObserver<T>() {
+                        override fun onComplete() {
+                            dispose()
+                        }
 
-                    override fun onError(e: Throwable) {
-                        dispose()
-                        throw e
-                    }
-                }.also<DisposableObserver<T>> { eventSource.subscribe(it) }
+                        override fun onNext(value: T) {
+                            observer.onChanged(value)
+                        }
+
+                        override fun onError(e: Throwable) {
+                            dispose()
+                            throw e
+                        }
+                    }.also<DisposableObserver<T>> { eventSource.subscribe(it) }
+                }
             }
         }
     }
@@ -57,8 +62,10 @@ class LifecycleAwareSubscriber<T> constructor(
 }
 
 
+fun <T> ObservableSource<T>.observe(lifecycleOwner: LifecycleOwner, observer: Observer<T>) {
+    LifecycleAwareSubscriber(this, lifecycleOwner, observer)
+}
+
 fun <T> ObservableSource<T>.observe(lifecycleOwner: LifecycleOwner, observer: (T) -> Unit) {
-    if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.INITIALIZED)) {
-        lifecycleOwner.lifecycle.addObserver(LifecycleAwareSubscriber(this, lifecycleOwner, observer))
-    }
+    this.observe(lifecycleOwner, Observer { observer.invoke(it) })
 }
