@@ -1,0 +1,2 @@
+include ':app', ':lifecycleawaresubscriber'
+rootProject.name='Lifecycle Aware Subscriber'
